@@ -19,6 +19,10 @@ reg [DATA_WIDTH-1:0] data_in;
 wire [DATA_WIDTH-1:0] data_out;
 wire empty;
 wire full;
+wire almost_full;
+wire almost_empty;
+
+wire [$clog2(FIFO_DEPTH):0] fill_count;
 
 integer i;
 
@@ -41,17 +45,17 @@ dut
     .data_in(data_in),
     .data_out(data_out),
     .empty(empty),
-    .full(full)
+    .full(full),
+    .almost_full(almost_full),
+    .almost_empty(almost_empty),
+    .fill_count(fill_count)
 );
 
 /////////////////////////////////////////////////////
 // Clock generation
 /////////////////////////////////////////////////////
 
-always
-begin
-    #5 clk = ~clk;
-end
+always #5 clk = ~clk;
 
 /////////////////////////////////////////////////////
 // Write Task
@@ -65,11 +69,11 @@ begin
     wr_en   = 1;
     data_in = d_in;
 
-    $display($time, " write_data data_in = %0d", data_in);
-
     @(posedge clk);
 
-    cs    = 1;
+    $display("Time=%0t WRITE data=%0d fill=%0d AF=%0b FULL=%0b",
+              $time, d_in, fill_count, almost_full, full);
+
     wr_en = 0;
 end
 endtask
@@ -87,9 +91,9 @@ begin
 
     @(posedge clk);
 
-    $display($time, " read_data data_out = %0d", data_out);
+    $display("Time=%0t READ  data=%0d fill=%0d AE=%0b EMPTY=%0b",
+              $time, data_out, fill_count, almost_empty, empty);
 
-    cs    = 1;
     rd_en = 0;
 end
 endtask
@@ -101,71 +105,88 @@ endtask
 initial
 begin
 
-    #1;
     rst_n = 0;
     rd_en = 0;
     wr_en = 0;
     cs    = 0;
+    data_in = 0;
 
-    @(posedge clk)
+    #20;
     rst_n = 1;
 
 /////////////////////////////////////////////////////
-// SCENARIO 1
+// SCENARIO 1 : Basic FIFO
 /////////////////////////////////////////////////////
 
-    $display($time, "\n SCENARIO 1");
+$display("\n---- SCENARIO 1 : Basic FIFO ----");
 
-    write_data(1);
-    write_data(10);
-    write_data(100);
+write_data(1);
+write_data(10);
+write_data(100);
 
+read_data();
+read_data();
+read_data();
+
+/////////////////////////////////////////////////////
+// SCENARIO 2 : Fill FIFO
+/////////////////////////////////////////////////////
+
+$display("\n---- SCENARIO 2 : Fill FIFO ----");
+
+for (i = 0; i < FIFO_DEPTH; i = i + 1)
+begin
+    write_data(i);
+end
+
+/////////////////////////////////////////////////////
+// SCENARIO 3 : Drain FIFO
+/////////////////////////////////////////////////////
+
+$display("\n---- SCENARIO 3 : Drain FIFO ----");
+
+for (i = 0; i < FIFO_DEPTH; i = i + 1)
+begin
     read_data();
+end
+
+/////////////////////////////////////////////////////
+// SCENARIO 4 : Almost Full Test
+/////////////////////////////////////////////////////
+
+$display("\n---- SCENARIO 4 : Almost Full ----");
+
+for (i = 0; i < FIFO_DEPTH-2; i = i + 1)
+begin
+    write_data(i+50);
+end
+
+/////////////////////////////////////////////////////
+// SCENARIO 5 : Almost Empty Test
+/////////////////////////////////////////////////////
+
+$display("\n---- SCENARIO 5 : Almost Empty ----");
+
+for (i = 0; i < FIFO_DEPTH-3; i = i + 1)
+begin
     read_data();
-    read_data();
-
-/////////////////////////////////////////////////////
-// SCENARIO 2
-/////////////////////////////////////////////////////
-
-    $display($time, "\n SCENARIO 2");
-
-    for (i = 0; i < FIFO_DEPTH; i = i + 1)
-    begin
-        write_data(2**i);
-        read_data();
-    end
-
-/////////////////////////////////////////////////////
-// SCENARIO 3
-/////////////////////////////////////////////////////
-
-    $display($time, "\n SCENARIO 3");
-
-    for (i = 0; i <= FIFO_DEPTH; i = i + 1)
-    begin
-        write_data(2**i);
-    end
-
-    for (i = 0; i < FIFO_DEPTH; i = i + 1)
-    begin
-        read_data();
-    end
+end
 
 /////////////////////////////////////////////////////
 
-    #40 $finish;
+#50;
+$finish;
 
 end
 
 /////////////////////////////////////////////////////
-// Dump waveform
+// Waveform dump
 /////////////////////////////////////////////////////
 
 initial
 begin
-    $dumpfile("dump.vcd");
-    $dumpvars;
+    $dumpfile("fifo_wave.vcd");
+    $dumpvars(0,tb_fifo_sync);
 end
 
 endmodule
